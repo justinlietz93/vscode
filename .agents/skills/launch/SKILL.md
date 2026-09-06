@@ -37,6 +37,8 @@ The clone is **slim**: workspace storage, browser caches, file history, cached V
 
 > The launcher always sets `files.simpleDialog.enable: true` in the launched profile's `User/settings.json`. This is required for automation: VS Code's native OS file dialogs cannot be driven via `@playwright/cli` over CDP and are completely unreachable over SSH on headless macOS. The simple (quick-input) dialog can be navigated with `press` and clipboard paste. The override is per-launch and only affects throwaway profiles.
 
+> Before launching from an agent session, call `get_current_session` and pass its `title` as `--session-title`. For a regular editor window, the launcher writes that title into the throwaway profile's `window.title` setting. For an Agents window, it passes the title to the Command Center. This never modifies the source profile.
+
 > For unattended automation, pass `--disable-workspace-trust` so a trust dialog cannot block the flow or extension-host startup. The override is process-scoped and does not modify the source profile. Only use it with content you trust.
 
 ## Launch
@@ -45,8 +47,9 @@ The launcher script lives next to this SKILL.md at `scripts/launch.sh` (macOS/Li
 
 ```bash
 # LAUNCH=<dir-of-this-SKILL.md>/scripts/launch.sh
-"$LAUNCH"                                    # default: workbench
-"$LAUNCH" --agents                           # Agents window
+SESSION_TITLE=<title-from-get_current_session>
+"$LAUNCH" --session-title "$SESSION_TITLE"   # default: workbench
+"$LAUNCH" --agents --session-title "$SESSION_TITLE"
 "$LAUNCH" -- <workspace-path>                # forward extra args to code.sh
 "$LAUNCH" --source-user-data-dir <path>      # pick a specific authed profile
 "$LAUNCH" --repo <vscode-repo-root>          # if not run from the repo
@@ -61,8 +64,9 @@ On Windows, invoke the PowerShell launcher with the same flags:
 ```powershell
 $skillDir = '<dir-of-this-SKILL.md>'
 $launch = Join-Path $skillDir 'scripts\launch.ps1'
-& $launch                                      # default: workbench
-& $launch --agents                             # Agents window
+$sessionTitle = '<title-from-get_current_session>'
+& $launch --session-title $sessionTitle         # default: workbench
+& $launch --agents --session-title $sessionTitle
 & $launch -- --use-mock-keychain               # forward extra args to code.bat
 & $launch --source-user-data-dir C:\path\to\profile
 & $launch --repo C:\path\to\vscode
@@ -158,6 +162,8 @@ $pid = $info.pid
 ## Drive the UI with @playwright/cli
 
 Use the dynamic `cdpPort` from the launch JSON. The normal loop is: attach, confirm the target, snapshot, interact, then re-snapshot after meaningful UI changes.
+
+If you are unsure about Playwright CLI syntax, run `npx @playwright/cli --help` or `npx @playwright/cli <command> --help` instead of guessing option names.
 
 > **Always pick a unique `PW_SESSION` name and pass it as `-s=$PW_SESSION`** on every `npx @playwright/cli ...` call. The CLI is backed by a persistent daemon (`cliDaemon.js`) keyed by session name; if two shells both omit `-s=`, they share the implicit `"default"` session and the most-recently-attached CDP "wins" for every subsequent command from either shell. The launch skill is built around isolation (per-instance UDD, ports, shared-data-dir), and this pattern keeps that isolation intact at the Playwright-driving layer too. **A note on the alternative `PLAYWRIGHT_CLI_SESSION` env var:** it's documented in the package README and works correctly for `open`-style workflows, but it interacts poorly with `attach --cdp=...` (the daemon ends up with both `--cdp=...` and `--endpoint=<env-value>`, and the latter wins, causing a `connect ENOENT` failure). Confirmed against `@playwright/cli@0.1.13`. Explicit `-s=NAME` works in all modes.
 
